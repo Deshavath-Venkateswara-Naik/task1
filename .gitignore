@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+.env
+.venv/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Editor temporary files
+*.swp
+*~
+
+# Media files
+*.wav
+*.mp4
+*.mp3
+*.m4a
+
+# Output files
+transcript*.txt
+
+# OS generated files
+.DS_Store
+Thumbs.db
