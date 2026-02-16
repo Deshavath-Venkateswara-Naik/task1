@@ -1,6 +1,8 @@
-from moviepy import VideoFileClip
+from moviepy.editor import VideoFileClip, AudioFileClip
 from faster_whisper import WhisperModel
 from deep_translator import GoogleTranslator
+from gtts import gTTS
+from pydub import AudioSegment
 import os
 
 # ==============================
@@ -8,62 +10,97 @@ import os
 # ==============================
 VIDEO_PATH = "video.mp4"
 AUDIO_PATH = "audio.wav"
-MODEL_SIZE = "base"   # tiny, base, small, medium, large-v2
+TELUGU_AUDIO_PATH = "telugu_output.mp3"
+FINAL_VIDEO_PATH = "final_dub_video.mp4"
+MODEL_SIZE = "base"
 
 # ==============================
 # STEP 1: Extract Audio
 # ==============================
-print("Extracting audio from video...")
+print("Step 1: Extracting audio from video...")
 
 video = VideoFileClip(VIDEO_PATH)
 video.audio.write_audiofile(AUDIO_PATH)
 
-print("Audio extracted successfully!")
+print("✅ Audio extracted!")
 
 # ==============================
-# STEP 2: Load Whisper Model
+# STEP 2: English Transcription
 # ==============================
-print("Loading faster-whisper model...")
+print("Step 2: Transcribing to English...")
 
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+segments_gen, info = model.transcribe(AUDIO_PATH)
+segments = list(segments_gen)
 
-print("Model loaded!")
+english_text = ""
+for segment in segments:
+    english_text += segment.text.strip() + " "
 
-# ==============================
-# STEP 3: Transcribe Audio (English)
-# ==============================
-print("Transcribing...")
-
-segments_generator, info = model.transcribe(AUDIO_PATH)
-segments = list(segments_generator)
-
-print("Detected language:", info.language)
+print("✅ English transcription completed!")
 
 # ==============================
-# STEP 4: Translate to Telugu
+# STEP 3: Translate to Telugu
 # ==============================
-print("Translating to Telugu...")
+print("Step 3: Translating to Telugu...")
 
 translator = GoogleTranslator(source='auto', target='te')
+telugu_text = translator.translate(english_text)
 
-with open("transcript_english.txt", "w", encoding="utf-8") as eng_file, \
-     open("transcript_telugu.txt", "w", encoding="utf-8") as tel_file:
+print("✅ Translation completed!")
 
-    for segment in segments:
-        english_text = segment.text.strip()
+# ==============================
+# STEP 4: Generate Telugu Audio
+# ==============================
+print("Step 4: Generating Telugu audio...")
 
-        # Translate to Telugu
-        telugu_text = translator.translate(english_text)
+MAX_CHARS = 2000
+chunks = [telugu_text[i:i+MAX_CHARS] for i in range(0, len(telugu_text), MAX_CHARS)]
 
-        # Format with timestamps
-        eng_line = f"[{segment.start:.2f}s -> {segment.end:.2f}s] {english_text}"
-        tel_line = f"[{segment.start:.2f}s -> {segment.end:.2f}s] {telugu_text}"
+temp_files = []
 
-        print("\nEN:", eng_line)
-        print("TE:", tel_line)
+for i, chunk in enumerate(chunks):
+    temp_file = f"temp_part_{i}.mp3"
+    tts = gTTS(text=chunk, lang="te")
+    tts.save(temp_file)
+    temp_files.append(temp_file)
 
-        eng_file.write(eng_line + "\n")
-        tel_file.write(tel_line + "\n")
+# Merge chunks
+combined = AudioSegment.empty()
 
-print("\n✅ Transcription + Translation Completed!")
-print("Saved as transcript_english.txt and transcript_telugu.txt")
+for file in temp_files:
+    combined += AudioSegment.from_mp3(file)
+
+combined.export(TELUGU_AUDIO_PATH, format="mp3")
+
+# Remove temporary files
+for file in temp_files:
+    os.remove(file)
+
+print("✅ Telugu audio generated!")
+
+# ==============================
+# STEP 5: Merge Telugu Audio with Video
+# ==============================
+print("Step 5: Merging Telugu audio with video...")
+
+telugu_audio = AudioFileClip(TELUGU_AUDIO_PATH)
+
+# Match durations safely
+if telugu_audio.duration > video.duration:
+    telugu_audio = telugu_audio.subclip(0, video.duration)
+else:
+    video = video.subclip(0, telugu_audio.duration)
+
+# IMPORTANT: MoviePy 1.x uses set_audio()
+final_video = video.set_audio(telugu_audio)
+
+final_video.write_videofile(
+    FINAL_VIDEO_PATH,
+    codec="libx264",
+    audio_codec="aac",
+    fps=video.fps
+)
+
+print("\n🎬 ✅ Final dubbed video saved as:", FINAL_VIDEO_PATH)
+print("🔥 Process Completed Successfully!")
